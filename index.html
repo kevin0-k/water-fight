@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>지상최대 물싸움</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="top-header">
+        <div class="header-copy">
+          <div class="header-kicker">JEONGNAMJIN RETRO ARCADE</div>
+          <h1>지상최대 물싸움</h1>
+          <div class="header-meta">
+            <span>ARCADE MODE</span>
+            <span>정남진 장흥 물축제</span>
+            <span>8-BIT SUMMER</span>
+          </div>
+        </div>
+        <img class="header-mascot" src="./assets/kim-jinseo.png" alt="김진서 물총 캐릭터" />
+      </header>
+
+      <main class="layout">
+        <section class="game-wrap" aria-label="지상최대 물싸움 미니 게임">
+          <div class="hud">
+            <div class="hud-card">
+              <span class="hud-label">생명력</span>
+              <strong id="health" class="health-hearts" aria-label="생명력 3"></strong>
+            </div>
+            <div class="hud-card">
+              <span class="hud-label">스테이지</span>
+              <strong id="stage">1</strong>
+            </div>
+            <div class="hud-card">
+              <span class="hud-label">속도</span>
+              <strong id="speed">1.0x</strong>
+            </div>
+            <div class="hud-card score-card">
+              <span class="hud-label">점수</span>
+              <strong id="score">0</strong>
+            </div>
+          </div>
+
+          <canvas id="game" width="960" height="620" aria-label="게임 화면"></canvas>
+
+          <div class="mobile-controls" aria-label="모바일 조작">
+            <button id="leftBtn" class="control-btn arrow-btn" aria-label="왼쪽으로 각도 조절">◀</button>
+            <button id="fireBtn" class="control-btn fire-btn" aria-label="물총 발사">발사</button>
+            <button id="rightBtn" class="control-btn arrow-btn" aria-label="오른쪽으로 각도 조절">▶</button>
+          </div>
+
+          <div class="game-actions">
+            <label class="player-name-field" for="playerName">
+              <span>플레이어</span>
+              <input id="playerName" maxlength="12" autocomplete="off" placeholder="이름 입력" />
+            </label>
+            <button id="startBtn" class="start-btn">게임 시작</button>
+            <p>PC: ← → 각도 조절, Space 또는 클릭 발사</p>
+          </div>
+        </section>
+
+        <aside class="info-panel">
+          <img class="info-mascot" src="./assets/kim-jinseo.png" alt="" aria-hidden="true" />
+          <div>
+            <span class="section-tag">Festival Mission</span>
+            <h2>지상최대 물싸움</h2>
+          </div>
+          <p>
+            정남진 장흥 물축제의 시원함을 레트로 아케이드 게임으로 담았습니다.
+            내려오는 물총 부대를 맞히고, 중간중간 등장하는 한우와 표고버섯 보너스로 생명력을 회복하세요.
+          </p>
+          <div class="mini-list">
+            <span>적 통과: 생명력 -1</span>
+            <span>한우/표고 명중: 생명력 +1</span>
+            <span>점수 상승: 스테이지 증가</span>
+          </div>
+        </aside>
+
+        <section class="leaderboard-panel" aria-labelledby="leaderboardTitle">
+          <div>
+            <span class="section-tag">Leaderboard</span>
+            <h2 id="leaderboardTitle">물싸움 명예의 전당</h2>
+          </div>
+          <ol id="leaderboard" class="leaderboard-list"></ol>
+        </section>
+      </main>
+    </div>
+
+    <script src="./game.js"></script>
+  </body>
+</html>
