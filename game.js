@@ -26,6 +26,7 @@ function loadImage(src) {
 const images = {
   stage: loadImage("./assets/stage.png"),
   stage2: loadImage("./assets/stage-2.png"),
+  stage3: loadImage("./assets/stage-3.png"),
   waterGun: loadImage("./assets/water-gun.png"),
   hanwoo: loadImage("./assets/hanwoo.png"),
   mushroom: loadImage("./assets/mushroom.png"),
@@ -34,6 +35,113 @@ const images = {
 };
 
 const enemySprites = {};
+let audioContext = null;
+let masterGain = null;
+let bgmTimer = null;
+let bgmStep = 0;
+
+const bgmMelody = [
+  523.25, 659.25, 783.99, 659.25,
+  587.33, 698.46, 880, 698.46,
+  659.25, 783.99, 987.77, 783.99,
+  587.33, 698.46, 783.99, 493.88,
+];
+
+const bgmBass = [130.81, 146.83, 164.81, 146.83];
+
+function ensureAudio() {
+  if (!audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return false;
+    audioContext = new AudioContextClass();
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = 0.28;
+    masterGain.connect(audioContext.destination);
+  }
+  if (audioContext.state === "suspended") audioContext.resume();
+  return true;
+}
+
+function playTone(frequency, duration, options = {}) {
+  if (!ensureAudio()) return;
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.type = options.type || "square";
+  oscillator.frequency.setValueAtTime(frequency, now);
+  if (options.endFrequency) {
+    oscillator.frequency.exponentialRampToValueAtTime(options.endFrequency, now + duration);
+  }
+  gain.gain.setValueAtTime(options.volume || 0.08, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+  oscillator.connect(gain);
+  gain.connect(masterGain);
+  oscillator.start(now);
+  oscillator.stop(now + duration);
+}
+
+function playNoise(duration = 0.08, volume = 0.08) {
+  if (!ensureAudio()) return;
+  const sampleCount = Math.floor(audioContext.sampleRate * duration);
+  const buffer = audioContext.createBuffer(1, sampleCount, audioContext.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < sampleCount; i += 1) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const source = audioContext.createBufferSource();
+  const filter = audioContext.createBiquadFilter();
+  const gain = audioContext.createGain();
+  source.buffer = buffer;
+  filter.type = "bandpass";
+  filter.frequency.value = 1800;
+  gain.gain.setValueAtTime(volume, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + duration);
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(masterGain);
+  source.start();
+}
+
+function playShotSound() {
+  playTone(760, 0.09, { endFrequency: 280, volume: 0.12 });
+  playNoise(0.06, 0.055);
+}
+
+function playEnemyDownSound() {
+  playTone(440, 0.08, { endFrequency: 220, volume: 0.13 });
+  window.setTimeout(() => playTone(659.25, 0.1, { endFrequency: 329.63, volume: 0.11 }), 55);
+  playNoise(0.1, 0.07);
+}
+
+function playStageSound() {
+  [523.25, 659.25, 783.99, 1046.5].forEach((note, index) => {
+    window.setTimeout(() => playTone(note, 0.14, { volume: 0.1 }), index * 90);
+  });
+}
+
+function stopBgm() {
+  if (bgmTimer) window.clearInterval(bgmTimer);
+  bgmTimer = null;
+}
+
+function startBgm() {
+  if (!ensureAudio()) return;
+  stopBgm();
+  bgmStep = 0;
+  const tick = () => {
+    if (!state.running) return;
+    const melody = bgmMelody[bgmStep % bgmMelody.length];
+    playTone(melody, 0.11, { volume: 0.045 });
+    if (bgmStep % 2 === 0) {
+      const bass = bgmBass[Math.floor(bgmStep / 4) % bgmBass.length];
+      playTone(bass, 0.18, { type: "triangle", volume: 0.055 });
+    }
+    bgmStep += 1;
+  };
+  tick();
+  const interval = Math.max(105, 145 - (state.stage - 1) * 12);
+  bgmTimer = window.setInterval(tick, interval);
+}
 
 function createOutlinedEnemySprite(image, width = 70, height = 97, outline = 3) {
   const sprite = document.createElement("canvas");
@@ -130,6 +238,7 @@ function resetGame() {
   state.stageBannerTimer = 0;
   startBtn.textContent = "다시 시작";
   updateHud();
+  startBgm();
 }
 
 function updateHud() {
@@ -139,7 +248,7 @@ function updateHud() {
 }
 
 function getSpeedMultiplier() {
-  return 1 + (state.stage - 1) * 0.22;
+  return 1 + (state.stage - 1) * 0.32;
 }
 
 function clampAngle() {
@@ -163,6 +272,7 @@ function getNozzleTip() {
 
 function fire() {
   if (!state.running) return;
+  playShotSound();
   const tip = getNozzleTip();
   state.shots.push({
     x: tip.x,
@@ -185,7 +295,7 @@ function spawnEnemy() {
     y: -64,
     w: 70,
     h: 97,
-    speed: (48 + Math.random() * 24) * getSpeedMultiplier(),
+    speed: (54 + Math.random() * 28) * getSpeedMultiplier(),
     sway: Math.random() * Math.PI * 2,
   });
 }
@@ -225,7 +335,7 @@ function update(dt) {
   if (keys.has("ArrowRight")) rotateAim(1, 0.065);
 
   state.enemyTimer -= dt;
-  const spawnDelay = Math.max(0.42, 1.15 - state.stage * 0.055);
+  const spawnDelay = Math.max(0.48, 1.08 - state.stage * 0.14);
   if (state.enemyTimer <= 0) {
     spawnEnemy();
     state.enemyTimer = spawnDelay;
@@ -234,7 +344,7 @@ function update(dt) {
   state.bonusTimer -= dt;
   if (state.bonusTimer <= 0) {
     spawnBonus();
-    state.bonusTimer = 5.5 + Math.random() * 3;
+    state.bonusTimer = 6.2 + Math.random() * 3.4;
   }
 
   state.shots.forEach((shot) => {
@@ -244,7 +354,7 @@ function update(dt) {
   });
 
   state.enemies.forEach((enemy) => {
-    enemy.sway += dt * 4;
+    enemy.sway += dt * (4.2 + state.stage * 0.35);
     enemy.y += enemy.speed * dt;
     enemy.x += Math.sin(enemy.sway) * 12 * dt;
   });
@@ -281,16 +391,19 @@ function update(dt) {
     state.health = 0;
     state.running = false;
     state.gameOver = true;
+    stopBgm();
     recordScore();
   }
 
-  const nextStage = state.score >= 500 ? 2 : 1;
+  const nextStage = state.score >= 2000 ? 3 : state.score >= 1000 ? 2 : 1;
   if (nextStage > state.stage) {
     state.stage = nextStage;
     state.stageTransition = 0;
     state.stageBannerTimer = 2.2;
+    playStageSound();
+    startBgm();
   }
-  if (state.stage === 2) {
+  if (state.stage >= 2) {
     state.stageTransition = Math.min(1, state.stageTransition + dt / 1.5);
   }
   state.stageBannerTimer = Math.max(0, state.stageBannerTimer - dt);
@@ -312,6 +425,7 @@ function handleCollisions() {
         enemy.hit = true;
         shot.used = true;
         state.score += 20;
+        playEnemyDownSound();
         splash(enemy.x, enemy.y, "#29d6ff", 18);
         break;
       }
@@ -352,10 +466,12 @@ function drawCoveredImage(image, x, y, width, height) {
 function drawPixelBackground() {
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  const hasStage = drawCoveredImage(images.stage, 0, 0, W, H);
-  if (state.stageTransition > 0 && images.stage2.complete && images.stage2.naturalWidth) {
+  const previousStageImage = state.stage === 3 ? images.stage2 : images.stage;
+  const currentStageImage = state.stage === 3 ? images.stage3 : images.stage2;
+  const hasStage = drawCoveredImage(previousStageImage, 0, 0, W, H);
+  if (state.stage >= 2 && state.stageTransition > 0 && currentStageImage.complete && currentStageImage.naturalWidth) {
     ctx.globalAlpha = state.stageTransition;
-    drawCoveredImage(images.stage2, 0, 0, W, H);
+    drawCoveredImage(currentStageImage, 0, 0, W, H);
     ctx.globalAlpha = 1;
   }
   ctx.restore();
@@ -394,10 +510,10 @@ function drawStageBanner() {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "900 50px monospace";
-  ctx.fillText("STAGE 2", W / 2, H / 2 - 8);
+  ctx.fillText(`STAGE ${state.stage}`, W / 2, H / 2 - 8);
   ctx.fillStyle = "#ffffff";
   ctx.font = "700 18px monospace";
-  ctx.fillText("WOODLAND MODE", W / 2, H / 2 + 35);
+  ctx.fillText(state.stage === 3 ? "SODEUNGSEOM SUNSET" : "WOODLAND MODE", W / 2, H / 2 + 35);
   ctx.restore();
 }
 
@@ -546,6 +662,9 @@ function drawGameHud() {
   const rows = Math.max(1, Math.ceil(state.health / heartsPerRow));
   const panelWidth = 228;
   const panelHeight = 36 + rows * 31;
+  const speedPanelWidth = 154;
+  const speedPanelHeight = 74;
+  const speedPanelX = W - speedPanelWidth - 20;
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -569,6 +688,24 @@ function drawGameHud() {
     const row = Math.floor(index / heartsPerRow);
     drawPixelHeart(34 + col * heartWidth, 59 + row * 31, 4);
   }
+
+  ctx.fillStyle = "rgba(6, 15, 35, 0.82)";
+  ctx.fillRect(speedPanelX, 20, speedPanelWidth, speedPanelHeight);
+  ctx.strokeStyle = "#08111f";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(speedPanelX, 20, speedPanelWidth, speedPanelHeight);
+  ctx.strokeStyle = "#fff05a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(speedPanelX + 5, 25, speedPanelWidth - 10, speedPanelHeight - 10);
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "#55e8f2";
+  ctx.font = "900 16px monospace";
+  ctx.fillText("SPEED", speedPanelX + speedPanelWidth / 2, 31);
+  ctx.fillStyle = "#fff05a";
+  ctx.font = "900 28px monospace";
+  ctx.fillText(`${getSpeedMultiplier().toFixed(1)}x`, speedPanelX + speedPanelWidth / 2, 52);
   ctx.restore();
 }
 
@@ -621,9 +758,9 @@ function renderLeaderboard() {
   const seeded = entries.length
     ? entries
     : [
-        { name: "진서", score: 240, stage: 3 },
-        { name: "물총왕", score: 160, stage: 2 },
-        { name: "장흥러", score: 80, stage: 1 },
+        { name: "진서", score: 2340, stage: 3 },
+        { name: "물총왕", score: 1480, stage: 2 },
+        { name: "장흥러", score: 760, stage: 1 },
       ];
 
   leaderboardEl.innerHTML = seeded
