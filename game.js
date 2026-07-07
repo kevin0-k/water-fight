@@ -3,10 +3,11 @@ const ctx = canvas.getContext("2d");
 
 const stageEl = document.querySelector("#stage");
 const speedEl = document.querySelector("#speed");
+const ammoEl = document.querySelector("#ammo");
 const scoreEl = document.querySelector("#score");
 const startBtn = document.querySelector("#startBtn");
-const leftBtn = document.querySelector("#leftBtn");
-const rightBtn = document.querySelector("#rightBtn");
+const aimStick = document.querySelector("#aimStick");
+const aimKnob = document.querySelector("#aimKnob");
 const fireBtn = document.querySelector("#fireBtn");
 const playerNameInput = document.querySelector("#playerName");
 const leaderboardEl = document.querySelector("#leaderboard");
@@ -15,6 +16,14 @@ const W = canvas.width;
 const H = canvas.height;
 const keys = new Set();
 const leaderboardKey = "water-fight-leaderboard";
+const maxAmmo = 100;
+const reloadDuration = 1;
+const joystick = {
+  active: false,
+  pointerId: null,
+  dx: 0,
+  dy: -1,
+};
 
 function loadImage(src) {
   const image = new Image();
@@ -40,14 +49,39 @@ let masterGain = null;
 let bgmTimer = null;
 let bgmStep = 0;
 
-const bgmMelody = [
-  523.25, 659.25, 783.99, 659.25,
-  587.33, 698.46, 880, 698.46,
-  659.25, 783.99, 987.77, 783.99,
-  587.33, 698.46, 783.99, 493.88,
+const bgmSections = [
+  {
+    bass: [130.81, 130.81, 196.0, 174.61],
+    chord: [261.63, 329.63, 392.0],
+    melody: [523.25, null, 659.25, 783.99, null, 659.25, 587.33, null, 523.25, 587.33, 659.25, null, 783.99, 880.0, null, 783.99],
+    counter: [null, 392.0, null, 440.0, 493.88, null, 392.0, null, null, 493.88, null, 523.25, null, 587.33, 523.25, null],
+  },
+  {
+    bass: [146.83, 146.83, 220.0, 196.0],
+    chord: [293.66, 369.99, 440.0],
+    melody: [587.33, 659.25, null, 880.0, 783.99, null, 659.25, 587.33, null, 739.99, 880.0, 987.77, null, 880.0, 739.99, null],
+    counter: [369.99, null, 440.0, null, null, 493.88, null, 440.0, 369.99, null, 554.37, null, 587.33, null, 493.88, null],
+  },
+  {
+    bass: [164.81, 196.0, 246.94, 220.0],
+    chord: [329.63, 392.0, 493.88],
+    melody: [659.25, null, 783.99, 987.77, 880.0, null, 783.99, 659.25, 587.33, null, 659.25, 783.99, 987.77, null, 1046.5, 987.77],
+    counter: [null, 493.88, 587.33, null, 659.25, null, 587.33, null, 493.88, 523.25, null, 659.25, null, 739.99, null, 659.25],
+  },
+  {
+    bass: [174.61, 146.83, 196.0, 130.81],
+    chord: [349.23, 440.0, 523.25],
+    melody: [698.46, 783.99, 880.0, null, 1046.5, 987.77, null, 783.99, 880.0, null, 783.99, 698.46, 659.25, 587.33, null, 523.25],
+    counter: [440.0, null, 523.25, 587.33, null, 659.25, 587.33, null, 523.25, null, 440.0, null, 392.0, 440.0, null, 523.25],
+  },
 ];
 
-const bgmBass = [130.81, 146.83, 164.81, 146.83];
+const bgmFills = [
+  [783.99, 880.0, 987.77, 1174.66],
+  [659.25, 739.99, 880.0, 987.77],
+  [987.77, 880.0, 783.99, 659.25],
+  [1046.5, 987.77, 880.0, 1174.66],
+];
 
 function ensureAudio() {
   if (!audioContext) {
@@ -80,7 +114,7 @@ function playTone(frequency, duration, options = {}) {
   oscillator.stop(now + duration);
 }
 
-function playNoise(duration = 0.08, volume = 0.08) {
+function playNoise(duration = 0.08, volume = 0.08, options = {}) {
   if (!ensureAudio()) return;
   const sampleCount = Math.floor(audioContext.sampleRate * duration);
   const buffer = audioContext.createBuffer(1, sampleCount, audioContext.sampleRate);
@@ -92,14 +126,39 @@ function playNoise(duration = 0.08, volume = 0.08) {
   const filter = audioContext.createBiquadFilter();
   const gain = audioContext.createGain();
   source.buffer = buffer;
-  filter.type = "bandpass";
-  filter.frequency.value = 1800;
+  filter.type = options.filterType || "bandpass";
+  filter.frequency.value = options.frequency || 1800;
+  filter.Q.value = options.q || 1.4;
   gain.gain.setValueAtTime(volume, audioContext.currentTime);
   gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + duration);
   source.connect(filter);
   filter.connect(gain);
   gain.connect(masterGain);
   source.start();
+}
+
+function playBgmChord(notes, step) {
+  notes.forEach((note, index) => {
+    window.setTimeout(() => {
+      const octaveLift = step % 32 >= 16 && index === notes.length - 1 ? 2 : 1;
+      playTone(note * octaveLift, 0.16, { type: "triangle", volume: 0.026 });
+    }, index * 26);
+  });
+}
+
+function playBgmDrums(step) {
+  if (step % 16 === 0 || step % 16 === 6 || step % 16 === 10) {
+    playTone(92, 0.1, { type: "sine", endFrequency: 45, volume: 0.085 });
+  }
+  if (step % 16 === 4 || step % 16 === 12) {
+    playNoise(0.07, 0.045, { frequency: 900, q: 0.9 });
+  }
+  if (step % 2 === 1) {
+    playNoise(0.025, 0.018, { frequency: 5200, q: 2.2 });
+  }
+  if (step % 16 === 15) {
+    playNoise(0.045, 0.026, { frequency: 6400, q: 2.8 });
+  }
 }
 
 function playShotSound() {
@@ -127,19 +186,48 @@ function stopBgm() {
 function startBgm() {
   if (!ensureAudio()) return;
   stopBgm();
-  bgmStep = 0;
   const tick = () => {
     if (!state.running) return;
-    const melody = bgmMelody[bgmStep % bgmMelody.length];
-    playTone(melody, 0.11, { volume: 0.045 });
-    if (bgmStep % 2 === 0) {
-      const bass = bgmBass[Math.floor(bgmStep / 4) % bgmBass.length];
-      playTone(bass, 0.18, { type: "triangle", volume: 0.055 });
+    const sectionIndex = Math.floor(bgmStep / 32) % bgmSections.length;
+    const section = bgmSections[sectionIndex];
+    const phraseStep = bgmStep % 16;
+    const barStep = bgmStep % 32;
+    const stageLift = state.stage === 3 && bgmStep % 32 >= 16 ? 1.12246 : 1;
+    const melody = section.melody[phraseStep];
+    const counter = section.counter[phraseStep];
+
+    playBgmDrums(bgmStep);
+
+    if (bgmStep % 4 === 0) {
+      const bass = section.bass[Math.floor(barStep / 8) % section.bass.length];
+      playTone(bass, 0.22, { type: "triangle", volume: 0.055 });
     }
+
+    if (bgmStep % 8 === 0) {
+      playBgmChord(section.chord, bgmStep);
+    }
+
+    if (melody) {
+      const variation = bgmStep % 64 >= 48 ? 1.05946 : 1;
+      const octaveJump = bgmStep % 32 === 14 || bgmStep % 32 === 30 ? 2 : 1;
+      playTone(melody * variation * stageLift * octaveJump, 0.105, { volume: 0.039 });
+    }
+
+    if (counter && (bgmStep % 2 === 1 || state.stage >= 2)) {
+      playTone(counter * (state.stage === 3 ? 1.05946 : 1), 0.075, { type: "triangle", volume: 0.021 });
+    }
+
+    if (bgmStep % 32 === 28) {
+      const fill = bgmFills[(Math.floor(bgmStep / 32) + state.stage) % bgmFills.length];
+      fill.forEach((note, index) => {
+        window.setTimeout(() => playTone(note, 0.055, { volume: 0.03 }), index * 34);
+      });
+    }
+
     bgmStep += 1;
   };
   tick();
-  const interval = Math.max(105, 145 - (state.stage - 1) * 12);
+  const interval = Math.max(82, 116 - (state.stage - 1) * 8);
   bgmTimer = window.setInterval(tick, interval);
 }
 
@@ -192,6 +280,9 @@ const state = {
   health: 3,
   stage: 1,
   score: 0,
+  ammo: maxAmmo,
+  reloading: false,
+  reloadTimer: 0,
   angle: -Math.PI / 2,
   enemies: [],
   bonuses: [],
@@ -227,6 +318,9 @@ function resetGame() {
   state.health = 3;
   state.stage = 1;
   state.score = 0;
+  state.ammo = maxAmmo;
+  state.reloading = false;
+  state.reloadTimer = 0;
   state.angle = -Math.PI / 2;
   state.enemies = [];
   state.bonuses = [];
@@ -236,6 +330,7 @@ function resetGame() {
   state.bonusTimer = 3;
   state.stageTransition = 0;
   state.stageBannerTimer = 0;
+  bgmStep = 0;
   startBtn.textContent = "다시 시작";
   updateHud();
   startBgm();
@@ -244,7 +339,10 @@ function resetGame() {
 function updateHud() {
   stageEl.textContent = String(state.stage).padStart(2, "0");
   speedEl.textContent = `${getSpeedMultiplier().toFixed(1)}x`;
+  ammoEl.textContent = state.reloading ? "장전" : String(state.ammo).padStart(3, "0");
   scoreEl.textContent = String(state.score).padStart(6, "0");
+  fireBtn.textContent = state.reloading ? "장전중" : "발사";
+  fireBtn.disabled = state.reloading;
 }
 
 function getSpeedMultiplier() {
@@ -263,6 +361,51 @@ function rotateAim(direction, amount = 0.055) {
   clampAngle();
 }
 
+function setAimFromJoystick(dx, dy) {
+  if (!state.running) return;
+  const length = Math.hypot(dx, dy);
+  if (length < 0.12) return;
+  state.angle = Math.atan2(dy, dx);
+  clampAngle();
+}
+
+function moveJoystickKnob(dx, dy) {
+  if (!aimKnob) return;
+  const radius = 34;
+  const length = Math.hypot(dx, dy) || 1;
+  const limited = Math.min(1, length);
+  const x = (dx / length) * limited * radius;
+  const y = (dy / length) * limited * radius;
+  aimKnob.style.transform = `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`;
+}
+
+function resetJoystick() {
+  joystick.active = false;
+  joystick.pointerId = null;
+  joystick.dx = 0;
+  joystick.dy = -1;
+  moveJoystickKnob(0, 0);
+}
+
+function updateJoystick(event) {
+  if (!aimStick) return;
+  const rect = aimStick.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  const maxRadius = rect.width / 2;
+  const rawDx = (event.clientX - centerX) / maxRadius;
+  const rawDy = (event.clientY - centerY) / maxRadius;
+  const length = Math.hypot(rawDx, rawDy) || 1;
+  const limited = Math.min(1, length);
+  const dx = (rawDx / length) * limited;
+  const dy = Math.min(-0.08, (rawDy / length) * limited);
+  joystick.dx = dx;
+  joystick.dy = dy;
+  moveJoystickKnob(dx, dy);
+  setAimFromJoystick(dx, dy);
+  aimStick.setAttribute("aria-valuenow", String(Math.round((state.angle + Math.PI / 2) * (180 / Math.PI))));
+}
+
 function getNozzleTip() {
   return {
     x: player.x + Math.cos(state.angle) * player.barrel,
@@ -270,8 +413,16 @@ function getNozzleTip() {
   };
 }
 
+function startReload() {
+  if (state.reloading) return;
+  state.reloading = true;
+  state.reloadTimer = reloadDuration;
+  updateHud();
+}
+
 function fire() {
-  if (!state.running) return;
+  if (!state.running || state.reloading || state.ammo <= 0) return;
+  state.ammo -= 1;
   playShotSound();
   const tip = getNozzleTip();
   state.shots.push({
@@ -282,6 +433,8 @@ function fire() {
     life: 0.85,
   });
   splash(tip.x, tip.y, "#e7fbff", 6);
+  if (state.ammo <= 0) startReload();
+  updateHud();
 }
 
 function spawnEnemy() {
@@ -330,6 +483,16 @@ function splash(x, y, color, count = 12) {
 
 function update(dt) {
   if (!state.running) return;
+
+  if (state.reloading) {
+    state.reloadTimer -= dt;
+    if (state.reloadTimer <= 0) {
+      state.reloading = false;
+      state.reloadTimer = 0;
+      state.ammo = maxAmmo;
+      updateHud();
+    }
+  }
 
   if (keys.has("ArrowLeft")) rotateAim(-1, 0.065);
   if (keys.has("ArrowRight")) rotateAim(1, 0.065);
@@ -665,6 +828,8 @@ function drawGameHud() {
   const speedPanelWidth = 154;
   const speedPanelHeight = 74;
   const speedPanelX = W - speedPanelWidth - 20;
+  const ammoPanelY = 104;
+  const reloadProgress = state.reloading ? 1 - state.reloadTimer / reloadDuration : state.ammo / maxAmmo;
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -706,6 +871,27 @@ function drawGameHud() {
   ctx.fillStyle = "#fff05a";
   ctx.font = "900 28px monospace";
   ctx.fillText(`${getSpeedMultiplier().toFixed(1)}x`, speedPanelX + speedPanelWidth / 2, 52);
+
+  ctx.fillStyle = "rgba(6, 15, 35, 0.82)";
+  ctx.fillRect(speedPanelX, ammoPanelY, speedPanelWidth, speedPanelHeight);
+  ctx.strokeStyle = "#08111f";
+  ctx.lineWidth = 6;
+  ctx.strokeRect(speedPanelX, ammoPanelY, speedPanelWidth, speedPanelHeight);
+  ctx.strokeStyle = state.reloading ? "#ff5c7a" : "#8dff8d";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(speedPanelX + 5, ammoPanelY + 5, speedPanelWidth - 10, speedPanelHeight - 10);
+
+  ctx.fillStyle = state.reloading ? "#ffb2c0" : "#8dff8d";
+  ctx.font = "900 16px monospace";
+  ctx.fillText(state.reloading ? "RELOAD" : "AMMO", speedPanelX + speedPanelWidth / 2, ammoPanelY + 11);
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 25px monospace";
+  ctx.fillText(state.reloading ? `${Math.ceil(state.reloadTimer * 10) / 10}s` : `${state.ammo}/${maxAmmo}`, speedPanelX + speedPanelWidth / 2, ammoPanelY + 31);
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+  ctx.fillRect(speedPanelX + 18, ammoPanelY + 58, speedPanelWidth - 36, 7);
+  ctx.fillStyle = state.reloading ? "#ff5c7a" : "#8dff8d";
+  ctx.fillRect(speedPanelX + 18, ammoPanelY + 58, (speedPanelWidth - 36) * Math.max(0, Math.min(1, reloadProgress)), 7);
   ctx.restore();
 }
 
@@ -800,7 +986,7 @@ function loop(time) {
 document.addEventListener("keydown", (event) => {
   if (["ArrowLeft", "ArrowRight", "Space"].includes(event.code)) event.preventDefault();
   keys.add(event.code);
-  if (event.code === "Space") fire();
+  if (event.code === "Space" && !event.repeat) fire();
 });
 
 document.addEventListener("keyup", (event) => {
@@ -809,9 +995,28 @@ document.addEventListener("keyup", (event) => {
 
 canvas.addEventListener("pointerdown", fire);
 startBtn.addEventListener("click", resetGame);
-leftBtn.addEventListener("pointerdown", () => rotateAim(-1, 0.18));
-rightBtn.addEventListener("pointerdown", () => rotateAim(1, 0.18));
-fireBtn.addEventListener("pointerdown", fire);
+aimStick.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  joystick.active = true;
+  joystick.pointerId = event.pointerId;
+  aimStick.setPointerCapture(event.pointerId);
+  updateJoystick(event);
+});
+aimStick.addEventListener("pointermove", (event) => {
+  if (!joystick.active || event.pointerId !== joystick.pointerId) return;
+  event.preventDefault();
+  updateJoystick(event);
+});
+aimStick.addEventListener("pointerup", (event) => {
+  if (event.pointerId !== joystick.pointerId) return;
+  aimStick.releasePointerCapture(event.pointerId);
+  resetJoystick();
+});
+aimStick.addEventListener("pointercancel", resetJoystick);
+fireBtn.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  fire();
+});
 
 renderLeaderboard();
 updateHud();

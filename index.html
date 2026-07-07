@@ -36,6 +36,10 @@
               <span class="hud-label">속도</span>
               <strong id="speed">1.0x</strong>
             </div>
+            <div class="hud-card">
+              <span class="hud-label">탄약</span>
+              <strong id="ammo">100</strong>
+            </div>
             <div class="hud-card score-card">
               <span class="hud-label">점수</span>
               <strong id="score">0</strong>
@@ -45,9 +49,10 @@
           <canvas id="game" width="960" height="620" aria-label="게임 화면"></canvas>
 
           <div class="mobile-controls" aria-label="모바일 조작">
-            <button id="leftBtn" class="control-btn arrow-btn" aria-label="왼쪽으로 각도 조절">◀</button>
+            <div id="aimStick" class="aim-stick" role="slider" aria-label="물총 방향 조이스틱" aria-valuemin="-90" aria-valuemax="90" aria-valuenow="0">
+              <div id="aimKnob" class="aim-knob" aria-hidden="true"></div>
+            </div>
             <button id="fireBtn" class="control-btn fire-btn" aria-label="물총 발사">발사</button>
-            <button id="rightBtn" class="control-btn arrow-btn" aria-label="오른쪽으로 각도 조절">▶</button>
           </div>
 
           <div class="game-actions">
